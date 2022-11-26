@@ -855,8 +855,11 @@ func (d *decodeState) object(v reflect.Value, inExtObj bool) error {
 
 func (d *decodeState) checkIfExtensionObj() (scanType string, isExt bool) {
 	// Read first key to check if it is a extension type
-	oldoff, oldop := d.off, d.opcode
-	defer func() { d.off, d.opcode = oldoff, oldop }()
+	oldD := *d
+	oldParseState := make([]int, len(d.scan.parseState))
+	copy(oldParseState, d.scan.parseState)
+	oldD.scan.parseState = oldParseState
+	defer func() { *d = oldD }()
 	d.scanWhile(scanSkipSpace)
 	if d.opcode == scanEndObject {
 		return "", false
