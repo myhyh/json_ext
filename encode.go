@@ -354,7 +354,13 @@ func isEmptyValue(v reflect.Value) bool {
 	return false
 }
 
+const extensionTypeKey = "@type@"
+
 func (e *encodeState) reflectValue(v reflect.Value, opts encOpts) {
+	if name, ok := concreteTypeToName.Load(v.Type()); ok {
+		opts.extensionName = name.(string)
+	}
+
 	valueEncoder(v)(e, v, opts)
 }
 
@@ -362,7 +368,8 @@ type encOpts struct {
 	// quoted causes primitive fields to be encoded inside JSON strings.
 	quoted bool
 	// escapeHTML causes '<', '>', and '&' to be escaped in JSON strings.
-	escapeHTML bool
+	escapeHTML    bool
+	extensionName string
 }
 
 type encoderFunc func(e *encodeState, v reflect.Value, opts encOpts)
@@ -728,7 +735,12 @@ type structFields struct {
 }
 
 func (se structEncoder) encode(e *encodeState, v reflect.Value, opts encOpts) {
-	next := byte('{')
+	e.WriteByte('{')
+	if len(opts.extensionName) > 0 {
+		typeInfoStr := fmt.Sprintf(`"%s":"%s",`, extensionTypeKey, opts.extensionName)
+		e.WriteString(typeInfoStr)
+		opts.extensionName = ""
+	}
 FieldLoop:
 	for i := range se.fields.list {
 		f := &se.fields.list[i]
@@ -748,8 +760,6 @@ FieldLoop:
 		if f.omitEmpty && isEmptyValue(fv) {
 			continue
 		}
-		e.WriteByte(next)
-		next = ','
 		if opts.escapeHTML {
 			e.WriteString(f.nameEscHTML)
 		} else {
@@ -757,12 +767,11 @@ FieldLoop:
 		}
 		opts.quoted = f.quoted
 		f.encoder(e, fv, opts)
+		if i != len(se.fields.list)-1 {
+			e.WriteByte(',')
+		}
 	}
-	if next == '{' {
-		e.WriteString("{}")
-	} else {
-		e.WriteByte('}')
-	}
+	e.WriteByte('}')
 }
 
 func newStructEncoder(t reflect.Type) encoderFunc {

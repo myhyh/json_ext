@@ -371,7 +371,7 @@ func (d *decodeState) value(v reflect.Value) error {
 
 	case scanBeginObject:
 		if v.IsValid() {
-			if err := d.object(v); err != nil {
+			if err := d.object(v, false); err != nil {
 				return err
 			}
 		} else {
@@ -604,7 +604,7 @@ var textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem(
 
 // object consumes an object from d.data[d.off-1:], decoding into v.
 // The first byte ('{') of the object has been read already.
-func (d *decodeState) object(v reflect.Value) error {
+func (d *decodeState) object(v reflect.Value, inExtObj bool) error {
 	// Check for unmarshaler.
 	u, ut, pv := indirect(v, false)
 	if u != nil {
@@ -619,6 +619,20 @@ func (d *decodeState) object(v reflect.Value) error {
 	}
 	v = pv
 	t := v.Type()
+
+	if !inExtObj {
+		extType, isExt := d.checkIfExtensionObj()
+		if isExt {
+			extTyper, _ := nameToConcreteType.Load(extType)
+			vx := reflect.New(extTyper.(reflect.Type)).Elem()
+			err := d.object(vx, true)
+			if err != nil {
+				return err
+			}
+			v.Set(vx)
+			return nil
+		}
+	}
 
 	// Decoding into nil interface? Switch to non-reflect code.
 	if v.Kind() == reflect.Interface && v.NumMethod() == 0 {
@@ -837,6 +851,42 @@ func (d *decodeState) object(v reflect.Value) error {
 		}
 	}
 	return nil
+}
+
+func (d *decodeState) checkIfExtensionObj() (scanType string, isExt bool) {
+	// Read first key to check if it is a extension type
+	oldoff, oldop := d.off, d.opcode
+	defer func() { d.off, d.opcode = oldoff, oldop }()
+	d.scanWhile(scanSkipSpace)
+	if d.opcode == scanEndObject {
+		return "", false
+	}
+	if d.opcode != scanBeginLiteral {
+		panic(phasePanicMsg)
+	}
+
+	start := d.readIndex()
+	d.rescanLiteral()
+	item := d.data[start:d.readIndex()]
+	key, ok := unquoteBytes(item)
+
+	if ok && string(key) == extensionTypeKey {
+		// then read extension type name
+		if d.opcode == scanSkipSpace {
+			d.scanWhile(scanSkipSpace)
+		}
+		if d.opcode != scanObjectKey {
+			panic(phasePanicMsg)
+		}
+		d.scanWhile(scanSkipSpace)
+
+		start := d.readIndex()
+		d.rescanLiteral()
+		item := d.data[start:d.readIndex()]
+		typeName, _ := unquoteBytes(item)
+		return string(typeName), true
+	}
+	return "", false
 }
 
 // convertNumber converts the number literal s to a float64 or a Number

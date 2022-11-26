@@ -6,12 +6,13 @@ package json_ext_test
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"strings"
+
+	json "github.com/myhyh/json_ext"
 )
 
 func ExampleMarshal() {

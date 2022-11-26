@@ -5,10 +5,11 @@
 package json_ext_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
+
+	json "github.com/myhyh/json_ext"
 )
 
 type Size int
